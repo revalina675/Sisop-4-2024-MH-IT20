@@ -149,6 +149,7 @@ Melakukan compile file
 Mengecek hasil compile dengan command `ls`
 
 Program mengalami kesalahan
+
 ![333819454-2bb57597-57ae-4833-b96c-76be4dfe7631](https://github.com/revalina675/Sisop-4-2024-MH-IT20/assets/149811596/25f6b15e-36b5-408c-9039-00169d213c3b)
 
 
