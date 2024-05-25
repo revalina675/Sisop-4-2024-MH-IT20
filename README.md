@@ -21,6 +21,14 @@ Adfi merupakan seorang CEO agency creative bernama Ini Karya Kita. Ia sedang mel
 
 ## Jawab
 
+Pada soal ini diminta membuat program untuk memberikan watermark pada foto yang disediakan. 
+
+1. Membuat direktori untuk menyimpan pengerjaan `mkdir portofolio`
+2. Masuk ke dalam direktori `cd portofolio`
+3. Mendownload file yang disediakan di website www.inikaryakita.id
+4. Melakukan unzip file yang telah didownload dan mendapatkan 2 file, yaitu `bahaya` dan `gallery`
+5. Membuat file `inikaryakita.c` dengan menggunakan `nano inikaryakita.c`
+
 
 ## Soal 2
 
