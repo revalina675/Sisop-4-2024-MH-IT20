@@ -143,6 +143,13 @@ int main(int argc, char *argv[])
 }
 ```
 
+Melakukan compile file
+`gcc -o inikaryakita inikaryakita.c $(pkg-config --cflags --libs fuse MagickWand)`
+
+Mengecek hasil compile dengan command `ls`
+
+Program mengalami kesalahan
+
 
 ## Soal 2
 
