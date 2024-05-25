@@ -436,3 +436,182 @@ d. Catatan:
 - pada soal 3c, cukup salin secara manual. File Server hanya untuk membuktikan bahwa semua file pada direktori [nama_bebas] dapat dibuka dengan baik.
 
 ## Jawab
+
+Dibuat suatu folder bernama `modul_4`, di dalamnya diinstall dan diunzip link .zip yang disediakan pada soal. File yang telah didownload, lalu diekstrak dan dipindahkan ke dalam suatu folder bernama `relics`
+
+```
+$ wget --no-check-certificate 'https://docs.google.com/uc?export=download&id=1BJkaBvGaxqiwPWvXRdYNXzxxmIYQ8FKf' -O relics.zip
+$ unzip relics.zip -d /home/revalina/modul_4 
+```
+Setelah itu, kita bisa menghapus folder.zip yang tertinggal menggunakan command
+```
+rm -r relics.zip`
+```
+Lalu kita buat suatu konfigurasi dengan nama `archeology.c`, berikut adalah codenya :
+```
+#define FUSE_USE_VERSION 30
+
+#include <fuse.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+
+static const char *relics_path = "./relics";
+
+static int relicfs_getattr(const char *path, struct stat *stbuf)
+{
+    int res = 0;
+    memset(stbuf, 0, sizeof(struct stat));
+    
+    if (strcmp(path, "/") == 0) {
+        stbuf->st_mode = S_IFDIR | 0755;
+        stbuf->st_nlink = 2;
+    } else {
+        char *full_path;
+        asprintf(&full_path, "%s%s", relics_path, path);
+        DIR *dp = opendir(full_path);
+        if (dp) {
+            stbuf->st_mode = S_IFREG | 0444;
+            stbuf->st_nlink = 1;
+            stbuf->st_size = 0;
+            struct dirent *de;
+            while ((de = readdir(dp)) != NULL) {
+                if (strstr(de->d_name, ".000") != NULL) {
+                    struct stat st;
+                    char *part_path;
+                    asprintf(&part_path, "%s/%s", full_path, de->d_name);
+                    stat(part_path, &st);
+                    stbuf->st_size += st.st_size;
+                    free(part_path);
+                }
+            }
+            closedir(dp);
+        } else {
+            res = -ENOENT;
+        }
+        free(full_path);
+    }
+    return res;
+}
+
+static int relicfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
+{
+    (void) offset;
+    (void) fi;
+
+    if (strcmp(path, "/") != 0)
+        return -ENOENT;
+
+    filler(buf, ".", NULL, 0);
+    filler(buf, "..", NULL, 0);
+
+    DIR *dp;
+    struct dirent *de;
+    dp = opendir(relics_path);
+    if (dp == NULL)
+        return -errno;
+
+    while ((de = readdir(dp)) != NULL) {
+        if (strstr(de->d_name, ".000") != NULL) {
+            char *relic_name = strndup(de->d_name, strlen(de->d_name) - 4);
+            filler(buf, relic_name, NULL, 0);
+            free(relic_name);
+        }
+    }
+    closedir(dp);
+    return 0;
+}
+
+static int relicfs_open(const char *path, struct fuse_file_info *fi)
+{
+    return 0;
+}
+
+static int relicfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+    (void) fi;
+    char *full_path;
+    asprintf(&full_path, "%s%s", relics_path, path);
+    DIR *dp = opendir(full_path);
+    if (!dp)
+        return -ENOENT;
+
+    size_t total_size = 0;
+    struct dirent *de;
+    while ((de = readdir(dp)) != NULL) {
+        if (strstr(de->d_name, ".000") != NULL) {
+            char *part_path;
+            asprintf(&part_path, "%s/%s", full_path, de->d_name);
+            FILE *file = fopen(part_path, "rb");
+            if (!file) {
+                closedir(dp);
+                free(part_path);
+                free(full_path);
+                return -ENOENT;
+            }
+            fseek(file, 0, SEEK_END);
+            size_t part_size = ftell(file);
+            fseek(file, 0, SEEK_SET);
+            char *part_buf = malloc(part_size);
+            fread(part_buf, 1, part_size, file);
+            fclose(file);
+
+            if (offset < total_size + part_size) {
+                size_t copy_size = part_size;
+                if (offset > total_size)
+                    copy_size -= (offset - total_size);
+                if (copy_size > size)
+                    copy_size = size;
+                memcpy(buf, part_buf + (offset > total_size ? offset - total_size : 0), copy_size);
+                size -= copy_size;
+                buf += copy_size;
+                offset += copy_size;
+            }
+
+            total_size += part_size;
+            free(part_buf);
+            free(part_path);
+        }
+    }
+    closedir(dp);
+    free(full_path);
+
+    return total_size;
+}
+
+static struct fuse_operations relicfs_oper = {
+    .getattr = relicfs_getattr,
+    .readdir = relicfs_readdir,
+    .open = relicfs_open,
+    .read = relicfs_read,
+};
+
+int main(int argc, char *argv[])
+{
+    return fuse_main(argc, argv, &relicfs_oper, NULL);
+}
+```
+*- relicfs_getattr* : mengambil atribut dari file atau direktori. Ketika path yang diminta adalah root ("/"), fungsi ini mengatur atribut direktori root dengan mode direktori (S_IFDIR) dan izin akses 0755 serta jumlah hardlink sebanyak 2. Jika path bukan root, fungsi ini membangun jalur lengkap (full_path) dengan menggabungkan relics_path dan path, kemudian mencoba membuka direktori tersebut. Jika berhasil dibuka, fungsi ini menginisialisasi atribut file sebagai file reguler (S_IFREG) dengan izin baca 0444 dan menghitung ukuran total dari semua file yang berakhiran ".000" di dalam direktori tersebut. Ukuran total ini ditambahkan ke st_size dari struktur stbuf. Jika direktori tidak dapat dibuka, fungsi ini mengembalikan kode kesalahan -ENOENT.
+
+*- relicfs_readdir* : membaca isi dari direktori. Jika path yang diminta bukan root ("/"), fungsi ini segera mengembalikan -ENOENT. Untuk root, fungsi ini mengisi buffer dengan entri "." dan ".." yang merupakan entri default untuk direktori. Selanjutnya, fungsi ini membuka direktori relics_path dan membaca setiap entri di dalamnya. Untuk setiap file yang berakhiran ".000", fungsi ini menghilangkan ekstensi ".000" dan menambahkan nama file ke buffer. Setelah selesai, direktori ditutup dan fungsi mengembalikan 0 yang menandakan keberhasilan.
+
+*- relicfs_open* : membuka file dan tidak melakukan operasi khusus. Fungsi ini selalu mengembalikan 0, yang menandakan bahwa operasi membuka file selalu berhasil.
+
+*- relicfs_read* : membaca isi file. Fungsi ini membangun full_path dengan menggabungkan relics_path dan path, kemudian mencoba membuka direktori yang sesuai dengan full_path. Jika direktori tidak dapat dibuka, fungsi ini mengembalikan -ENOENT. Jika berhasil dibuka, fungsi ini membaca semua file yang berakhiran ".000" di dalam direktori tersebut. Isi dari setiap file diambil dan digabungkan ke dalam buffer buf, dengan mempertimbangkan offset dan ukuran data yang diminta. Fungsi ini menggabungkan isi file tersebut ke dalam buffer hingga ukuran total data yang dibaca mencukupi atau tidak ada lagi data yang tersisa untuk dibaca. Setelah selesai, fungsi ini mengembalikan total ukuran data yang berhasil dibaca.
+
+*- main* : titik masuk untuk aplikasi FUSE ini. Fungsi ini memanggil fuse_main dengan operasi yang telah didefinisikan (relicfs_oper). Struktur relicfs_oper mendefinisikan operasi filesystem yang diimplementasikan, yang mencakup getattr, readdir, open, dan read. Operasi ini dikaitkan dengan fungsi-fungsi yang telah dijelaskan sebelumnya untuk menangani operasi filesystem yang sesuai.
+
+Jangan lupa untuk membuat folder mount_point dan report sesuai pada soal dengan command `mkdir report` dan `mkdir mount_point`
+
+Setelah itu, file diaktivasi dengan menggunakan
+```
+gcc -Wall archeology.c -o archeology pkg-config fuse3 --cflags --libs  sudo ./archeology mount_point
+```
+Pada tahap ini, file yang ada pada folder relics tidak mau terpindah dan terkelompokkan pada folder `mount_point`. Terbukti saat dilakukan `sudo ./archeology mount_point`, saat dibuka pada file explorer, foto-foto tersebut tidak mau terpindah.
+
+![be3b6427-fabe-4585-af31-5cc6e62fc6f8](https://github.com/revalina675/Sisop-4-2024-MH-IT20/assets/150936800/7e8547d3-b467-4093-9449-002fafdba5ed)
